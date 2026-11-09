@@ -1,0 +1,243 @@
+# Sample requests for every endpoint, including the error cases.
+# Start the API first:  dotnet run --project src/EventManagement.Api --launch-profile http
+# Run the requests top to bottom: later requests reuse ids captured by earlier ones (# @name), and the
+# "past" and "full" examples use the demo events seeded in Development.
+# Works with the Visual Studio HTTP editor and the VS Code REST Client extension.
+
+@baseUrl = http://localhost:5080
+
+### Health check -> 200 "Healthy"
+GET {{baseUrl}}/health
+
+### List upcoming events, soonest first -> 200
+GET {{baseUrl}}/api/events?status=upcoming
+
+### List past events, most recent first (status is case-insensitive) -> 200
+# @name pastEvents
+GET {{baseUrl}}/api/events?status=PAST
+
+### Search titles and descriptions, paged -> 200
+GET {{baseUrl}}/api/events?status=all&search=api&page=1&pageSize=5
+
+### Find the seeded full event ("Startup Pitch Night") -> 200
+# @name fullEvents
+GET {{baseUrl}}/api/events?search=pitch%20night
+
+### 400: invalid query parameters (status, page and pageSize are all out of range)
+GET {{baseUrl}}/api/events?status=soon&page=0&pageSize=500
+
+### Create an event -> 201 with a Location header
+# @name createEvent
+POST {{baseUrl}}/api/events
+Content-Type: application/json
+
+{
+  "title": "Intro to ASP.NET Core",
+  "description": "A hands-on introduction to building web APIs with ASP.NET Core.",
+  "date": "2030-11-15T18:00:00Z",
+  "maxCapacity": 2
+}
+
+### Get the created event -> 200
+GET {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}
+
+### 404 event_not_found: unknown event
+GET {{baseUrl}}/api/events/00000000-0000-0000-0000-000000000000
+
+### 400: field validation (errors keyed by camelCase field name)
+POST {{baseUrl}}/api/events
+Content-Type: application/json
+
+{
+  "title": "   ",
+  "description": "Blank titles and out-of-range capacities are rejected.",
+  "date": "2030-11-15T18:00:00Z",
+  "maxCapacity": 0
+}
+
+### 400: missing required fields
+POST {{baseUrl}}/api/events
+Content-Type: application/json
+
+{}
+
+### 400: the date must be in the future
+POST {{baseUrl}}/api/events
+Content-Type: application/json
+
+{
+  "title": "Time travel meetup",
+  "date": "2020-01-01T18:00:00Z",
+  "maxCapacity": 10
+}
+
+### 400: the date needs a UTC offset ("Z" or e.g. "+01:00"); without one the instant is ambiguous
+# errors.date: "Event date must be a date and time with a UTC offset, such as 2030-11-15T18:00:00Z."
+POST {{baseUrl}}/api/events
+Content-Type: application/json
+
+{
+  "title": "Which time zone?",
+  "date": "2030-11-15T18:00:00",
+  "maxCapacity": 10
+}
+
+### 400: max capacity must be a JSON number, not a string
+# errors.maxCapacity: "Max capacity must be a whole number between 1 and 10,000."
+POST {{baseUrl}}/api/events
+Content-Type: application/json
+
+{
+  "title": "Quoted number",
+  "date": "2030-11-15T18:00:00Z",
+  "maxCapacity": "10"
+}
+
+### 415 unsupported_media_type: request bodies must be JSON
+# Bodies over 32 KB are refused the same way, with 413 payload_too_large, before they are read.
+POST {{baseUrl}}/api/events
+Content-Type: text/plain
+
+Intro to ASP.NET Core, 2030-11-15 18:00, 30 places
+
+### Replace the event's fields -> 200
+PUT {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "title": "Intro to ASP.NET Core (updated)",
+  "description": null,
+  "date": "2030-11-16T18:00:00Z",
+  "maxCapacity": 2
+}
+
+### 404 event_not_found: update an unknown event
+PUT {{baseUrl}}/api/events/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+
+{
+  "title": "Ghost event",
+  "date": "2030-11-16T18:00:00Z",
+  "maxCapacity": 10
+}
+
+### Register an attendee -> 201 with a Location header
+# @name registerAda
+POST {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations
+Content-Type: application/json
+
+{
+  "name": "Ada Lovelace",
+  "email": "ada@example.com"
+}
+
+### Register a second attendee -> 201 (the event is now full: 2 of 2)
+POST {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations
+Content-Type: application/json
+
+{
+  "name": "Grace Hopper",
+  "email": "grace@example.com"
+}
+
+### 409 already_registered: emails are compared case-insensitively (checked before capacity)
+POST {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations
+Content-Type: application/json
+
+{
+  "name": "Ada Again",
+  "email": "  ADA@example.com "
+}
+
+### 409 event_full: no spots left
+POST {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations
+Content-Type: application/json
+
+{
+  "name": "Alan Turing",
+  "email": "alan@example.com"
+}
+
+### 409 capacity_below_registrations: capacity can't drop below the 2 registrations
+PUT {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "title": "Intro to ASP.NET Core (updated)",
+  "date": "2030-11-16T18:00:00Z",
+  "maxCapacity": 1
+}
+
+### 400: invalid registration fields
+POST {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations
+Content-Type: application/json
+
+{
+  "name": "",
+  "email": "not-an-email"
+}
+
+### 404 event_not_found: register for an unknown event
+POST {{baseUrl}}/api/events/00000000-0000-0000-0000-000000000000/registrations
+Content-Type: application/json
+
+{
+  "name": "Ada Lovelace",
+  "email": "ada@example.com"
+}
+
+### List the event's registrations, oldest first -> 200
+GET {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations
+
+### Get one registration -> 200
+GET {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations/{{registerAda.response.body.$.id}}
+
+### 404 registration_not_found: unknown registration
+GET {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations/00000000-0000-0000-0000-000000000000
+
+### Unregister -> 204 (frees a spot)
+DELETE {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations/{{registerAda.response.body.$.id}}
+
+### 404 registration_not_found: unregistering twice
+DELETE {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}/registrations/{{registerAda.response.body.$.id}}
+
+### 409 event_full: the seeded full event
+POST {{baseUrl}}/api/events/{{fullEvents.response.body.$.items[0].id}}/registrations
+Content-Type: application/json
+
+{
+  "name": "Ada Lovelace",
+  "email": "ada@example.com"
+}
+
+### 409 event_in_past: registration is closed once an event has started
+POST {{baseUrl}}/api/events/{{pastEvents.response.body.$.items[0].id}}/registrations
+Content-Type: application/json
+
+{
+  "name": "Ada Lovelace",
+  "email": "ada@example.com"
+}
+
+### 409 event_in_past: past events can't be edited
+PUT {{baseUrl}}/api/events/{{pastEvents.response.body.$.items[0].id}}
+Content-Type: application/json
+
+{
+  "title": "Rewriting history",
+  "date": "2030-11-16T18:00:00Z",
+  "maxCapacity": 50
+}
+
+### List a past event's registrations -> 200
+# @name pastRegistrations
+GET {{baseUrl}}/api/events/{{pastEvents.response.body.$.items[0].id}}/registrations
+
+### 409 event_in_past: registrations of past events are locked
+DELETE {{baseUrl}}/api/events/{{pastEvents.response.body.$.items[0].id}}/registrations/{{pastRegistrations.response.body.$[0].id}}
+
+### Delete the event and its registrations -> 204
+DELETE {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}
+
+### 404 event_not_found: deleting twice
+DELETE {{baseUrl}}/api/events/{{createEvent.response.body.$.id}}

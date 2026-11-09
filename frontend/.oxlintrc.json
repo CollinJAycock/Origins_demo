@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc", "jsx-a11y", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    // Obsolete with the automatic JSX runtime.
+    "react/react-in-jsx-scope": "off",
+    // Tailwind's reset removes list styling, which makes Safari/VoiceOver drop list semantics;
+    // an explicit role="list" restores them.
+    "jsx-a11y/no-redundant-roles": ["error", { "ul": ["list"] }],
+    // role="status" is the standard live region for loading messages; <output> is meant for
+    // the result of a calculation.
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/consistent-type-imports": "error"
+  },
+  "ignorePatterns": ["dist", "node_modules"]
+}

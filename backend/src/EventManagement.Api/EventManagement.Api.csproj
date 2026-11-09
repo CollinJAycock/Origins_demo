@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- XML doc comments feed the OpenAPI document (summaries, parameter, schema and response descriptions). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Kept on the same patch as Microsoft.AspNetCore.Mvc.Testing. 10.0.14 depends on Microsoft.OpenApi >= 2.12.2;
+      earlier patches pinned 2.0.0, which is affected by GHSA-v5pm-xwqc-g5wc (NU1903).
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.3.1" />
+  </ItemGroup>
+
+</Project>

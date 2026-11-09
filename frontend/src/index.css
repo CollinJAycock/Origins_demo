@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* One accent colour for the whole app: swap the palette here to re-brand. */
+@theme inline {
+  --color-brand-50: var(--color-indigo-50);
+  --color-brand-100: var(--color-indigo-100);
+  --color-brand-200: var(--color-indigo-200);
+  --color-brand-500: var(--color-indigo-500);
+  --color-brand-600: var(--color-indigo-600);
+  --color-brand-700: var(--color-indigo-700);
+  --color-brand-800: var(--color-indigo-800);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    /* Keeps focused or scrolled-to elements clear of the sticky header. */
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+
+  /* A single, consistent keyboard focus ring for every interactive element. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+
+  /* The search box renders its own clear button. */
+  input[type="search"]::-webkit-search-cancel-button {
+    appearance: none;
+  }
+}

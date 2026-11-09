@@ -1,0 +1,38 @@
+# Runs the whole application with one command: docker compose up --build
+#   UI:  http://localhost:8080
+#   API: http://localhost:5080 (Swagger UI at /swagger)
+# Ports are published on 127.0.0.1 only: there is no authentication, so the app stays on this machine.
+
+# Neither container needs root, Linux capabilities or a writable filesystem beyond a scratch /tmp.
+x-hardening: &hardening
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+  tmpfs:
+    - /tmp
+
+services:
+  api:
+    <<: *hardening
+    build: ./backend
+    environment:
+      # The API runs as Production (the default); these switch on Swagger UI and the demo seed data.
+      # Data is in memory and resets on restart.
+      OpenApi__Enabled: "true"
+      Seeding__Enabled: "true"
+    ports:
+      - "127.0.0.1:5080:8080"
+    # The in-memory store has no size limit, so cap the container: running out of memory then affects only
+    # the API, not the Docker host, and on-failure restarts the API if it crashes.
+    mem_limit: 512m
+    restart: on-failure
+
+  web:
+    <<: *hardening
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:8080:8080"
