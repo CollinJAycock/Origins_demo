@@ -10,15 +10,17 @@ export const SUCCESS_TOAST_MS = 4000
 /** Renders toasts in a polite live region that is always mounted, so additions are announced. */
 export function Toaster() {
   const toasts = useToasts()
-  // While a toast is under the pointer or holds focus, none of them times out. Tracked by id, so a
-  // dismissed toast (which may not get a leave or blur event) can't keep the others paused.
+  // While a toast is under the pointer or holds focus, none of them times out (leaving the window
+  // blurs it, though, so they resume). Tracked by id, so a dismissed toast (which may not get a leave
+  // or blur event) can't keep the others paused.
   const [hoveredId, setHoveredId] = useState<number | null>(null)
   const [focusedId, setFocusedId] = useState<number | null>(null)
   const paused = toasts.some((toast) => toast.id === hoveredId || toast.id === focusedId)
   // A toast can go away while its button has focus: dismissed (from the keyboard, or with a click in
-  // browsers that focus buttons on click), or pushed out by newer ones. Focus then goes back to where
-  // it was before it entered the toasts (or to the main content), not into another toast, where it
-  // would keep them all from timing out.
+  // browsers that focus buttons on click), pushed out by newer ones, or timed out while the window was
+  // in the background (leaving the window doesn't move focus). Focus then goes back to where it was
+  // before it entered the toasts (or to the main content), not into another toast, where it would
+  // keep them all from timing out.
   const originRef = useRef<HTMLElement | null>(null)
   const focusRecovery = useFocusRecovery(() => {
     // Used once: focus has left the toasts after this.
