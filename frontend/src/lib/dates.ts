@@ -81,27 +81,27 @@ export function getMonthAndDay(iso: string, options: FormatOptions = {}): { mont
   return { month: part('month'), day: part('day') }
 }
 
-const RELATIVE_UNITS: ReadonlyArray<readonly [Intl.RelativeTimeFormatUnit, number]> = [
-  ['year', 365 * DAY_MS],
-  ['month', 30 * DAY_MS],
-  ['day', DAY_MS],
-  ['hour', HOUR_MS],
-  ['minute', MINUTE_MS],
+// Each unit with its length and the distance from which it is used. Counts are rounded, so a unit takes over
+// half a smaller one early: 59.5 minutes reads "in 1 hour", not "in 60 minutes", and 11.5 months "in 1 year".
+const RELATIVE_UNITS: ReadonlyArray<readonly [unit: Intl.RelativeTimeFormatUnit, size: number, from: number]> = [
+  ['year', 365 * DAY_MS, 345 * DAY_MS],
+  ['month', 30 * DAY_MS, 30 * DAY_MS],
+  ['day', DAY_MS, 23.5 * HOUR_MS],
+  ['hour', HOUR_MS, 59.5 * MINUTE_MS],
+  ['minute', MINUTE_MS, MINUTE_MS],
 ]
 
 /** "in 5 days", "tomorrow", "3 hours ago", "now" — the largest unit that fits, relative to `now`. */
 export function formatRelativeTime(iso: string, now: Date, { locale }: FormatOptions = {}): string {
   const date = new Date(iso)
   const diff = date.getTime() - now.getTime()
-  const unit = RELATIVE_UNITS.find(([, size]) => Math.abs(diff) >= size)
-  if (!unit) return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(0, 'second')
+  const unit = RELATIVE_UNITS.find(([, , from]) => Math.abs(diff) >= from)
+  if (!unit) return relativeTimeFormat(locale, 'auto').format(0, 'second')
   const [name, size] = unit
   // Days go by the calendar, so an event tomorrow evening is "tomorrow" at any time today.
   // Only days get "auto" wording: an event 42 days away is "in 1 month", not "next month".
-  if (name === 'day') {
-    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(calendarDaysBetween(now, date), 'day')
-  }
-  return new Intl.RelativeTimeFormat(locale).format(Math.round(diff / size), name)
+  if (name === 'day') return relativeTimeFormat(locale, 'auto').format(calendarDaysBetween(now, date), 'day')
+  return relativeTimeFormat(locale, 'always').format(Math.round(diff / size), name)
 }
 
 /** Calendar days from `from` to `to` in local time; rounding absorbs 23- and 25-hour DST days. */
@@ -110,15 +110,27 @@ function calendarDaysBetween(from: Date, to: Date): number {
   return Math.round((midnight(to) - midnight(from)) / DAY_MS)
 }
 
-// Intl formatters are comparatively expensive to create and long attendee lists reuse a few.
-const formatterCache = new Map<string, Intl.DateTimeFormat>()
+// Intl formatters are comparatively expensive to create, and event grids and long attendee lists reuse a few.
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
+const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>()
 
 function dateFormat(format: Intl.DateTimeFormatOptions, { locale, timeZone }: FormatOptions) {
-  const key = JSON.stringify([locale, timeZone, format])
-  let formatter = formatterCache.get(key)
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat(locale, { ...format, timeZone })
-    formatterCache.set(key, formatter)
+  return cached(dateFormatters, JSON.stringify([locale, timeZone, format]), () =>
+    new Intl.DateTimeFormat(locale, { ...format, timeZone }),
+  )
+}
+
+function relativeTimeFormat(locale: string | undefined, numeric: 'always' | 'auto') {
+  return cached(relativeTimeFormatters, JSON.stringify([locale, numeric]), () =>
+    new Intl.RelativeTimeFormat(locale, { numeric }),
+  )
+}
+
+function cached<Value>(cache: Map<string, Value>, key: string, create: () => Value): Value {
+  let value = cache.get(key)
+  if (value === undefined) {
+    value = create()
+    cache.set(key, value)
   }
-  return formatter
+  return value
 }

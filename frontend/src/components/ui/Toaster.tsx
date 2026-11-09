@@ -21,36 +21,15 @@ export function Toaster() {
   // in the background (leaving the window doesn't move focus). Focus then goes back to where it was
   // before it entered the toasts (or to the main content), not into another toast, where it would
   // keep them all from timing out.
-  const originRef = useRef<HTMLElement | null>(null)
-  const focusRecovery = useFocusRecovery(() => {
-    // Used once: focus has left the toasts after this.
-    const origin = originRef.current
-    originRef.current = null
-    return origin?.isConnected ? origin : document.querySelector<HTMLElement>('main')
-  })
+  const focusRecovery = useFocusRecovery((_region, cameFrom) =>
+    cameFrom?.isConnected ? cameFrom : document.querySelector<HTMLElement>('main'),
+  )
 
   return (
     <div
       aria-live="polite"
       className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4 sm:items-end sm:p-6"
-      onFocus={(event) => {
-        focusRecovery.onFocus(event)
-        const from = event.relatedTarget
-        if (from instanceof HTMLElement && !event.currentTarget.contains(from)) originRef.current = from
-      }}
-      onBlur={(event) => {
-        focusRecovery.onBlur(event)
-        // Once focus has left the toasts, forget where it came from.
-        const { relatedTarget: to, currentTarget: region } = event
-        if (to) {
-          if (!region.contains(to)) originRef.current = null
-          return
-        }
-        // Gone nowhere, unless the window lost focus: the toast is then still the focused element.
-        queueMicrotask(() => {
-          if (!region.contains(document.activeElement)) originRef.current = null
-        })
-      }}
+      {...focusRecovery}
     >
       {toasts.map((toast) => (
         <ToastMessage

@@ -73,8 +73,9 @@ internal static class ProblemDetailsConventions
     // own exception, itself a JsonException, while a value it can't convert has another cause or none.
     private static bool IsSyntaxError(Exception exception) => exception is JsonException { InnerException: JsonException };
 
-    // The JSON input formatter keys conversion errors by JSON path ("$.maxCapacity"), with the property spelled
-    // as the client sent it; report them under the same camelCase field names as every other validation error.
+    // Keys arrive as JSON paths from the input formatter's conversion errors ("$.maxCapacity", spelled as the
+    // client sent it) and as property names from the domain's validation ("MaxCapacity"). Report both under the
+    // camelCase field names of the JSON that clients send.
     private static Dictionary<string, string[]> NormalizeKeys(IDictionary<string, string[]> errors) =>
         errors
             .GroupBy(error => FieldName(error.Key))

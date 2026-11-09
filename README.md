@@ -97,23 +97,24 @@ npm run lint
 npm run build
 ```
 
-- **Backend: 203 xUnit tests.**
+- **Backend: 215 xUnit tests.**
   - The event aggregate's rules and their boundaries. An event starting exactly now counts as past, and a
     duplicate registration is reported before "full". The text and email rules: invisible and blank-looking
     characters, text-direction overrides, and other spellings of the same address.
   - Concurrency: 200 parallel registrations for 50 spots yield exactly 50 registrations, and 50 parallel
-    duplicates yield exactly one.
+    duplicates yield exactly one. Registrations, updates and unregisters racing a delete stop at it: once it has
+    returned, nothing changes, even through a request that still holds the event.
   - The services against the real in-memory store with a fake clock: filtering, search, paging, ordering, and
     an event turning past as time moves on.
   - HTTP integration tests through `WebApplicationFactory`: status codes, `Location` headers, problem
     details and validation keys, host filtering, the API docs switch, and the 32 KB body limit (on a real
     Kestrel server, because the in-memory test server doesn't enforce it).
-- **Frontend: 187 Vitest tests.** The date, validation and URL-state helpers; the API client's error handling;
+- **Frontend: 219 Vitest tests.** The date, validation and URL-state helpers; the API client's error handling;
   status and capacity logic; and components: the event form, registration panel, attendee list (including
   optimistic unregister and rollback), search box, events list (including paging and announcements of
   results), details page (including not found and out-of-date data), create and edit pages (including leaving
-  while a save is in flight), the delete flow, toasts, focus on navigation, and where focus goes when the
-  control that had it disappears.
+  while a save is in flight, whether it then succeeds or fails), the delete flow, toasts, focus on navigation,
+  and where focus goes when the control that had it disappears.
 
 CI runs both suites on pushes to `main` and on pull requests ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
@@ -271,6 +272,9 @@ API's field errors and conflict codes back onto the right fields.
 - **Concurrency.** Check-then-act rules (capacity, duplicates, capacity vs. registrations) must be atomic, or
   two people could take the last spot.
   - Each event has its own lock, so requests for different events never wait on each other.
+  - Deleting an event marks it as deleted under that lock. A request that found the event just before can
+    then no longer register, unregister or update it. It gets `404`, or `400` for invalid input, which is
+    always reported first.
   - Reads copy a consistent snapshot.
   - The concurrency tests above prove it holds under parallel load.
 - **Efficient reads.**
@@ -288,7 +292,8 @@ API's field errors and conflict codes back onto the right fields.
   pages. An event that turns out to have been deleted, whether on opening it or on deleting it, drops out of
   the cached lists, and deleting one that someone else already deleted counts as deleted. If a background
   refresh fails, the page keeps showing what it has, with a warning and a Retry button. After a save, the app
-  only navigates if the user is still on that page.
+  only navigates if the user is still on that page. A create, save, registration or delete that ends after its
+  form or dialog has gone (the user left, say) still reports how it ended, in a toast.
 - **Accessibility.** Moving to another page puts focus on its heading, as a full page load would, and so does a
   "not found" message replacing the page, or the error page shown when a page crashes. Changing only the query
   string, such as typing a search or turning a page, leaves focus where it is: on the last page, Next stays

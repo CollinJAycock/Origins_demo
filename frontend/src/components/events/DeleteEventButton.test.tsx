@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
@@ -44,9 +44,21 @@ function renderButton() {
 
 async function confirmDelete(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Delete' }))
-  const dialog = screen.getByRole('dialog', { name: 'Delete “Workshop”?' })
+  const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Delete “Workshop”?' })
   await user.click(within(dialog).getByRole('button', { name: 'Delete event' }))
   return dialog
+}
+
+/** Holds the delete request; returns a function that fails it as an unreachable server would. */
+function holdDelete() {
+  let fail: (error: Error) => void = () => {}
+  mockFetch(
+    () =>
+      new Promise<Response>((_resolve, reject) => {
+        fail = reject
+      }),
+  )
+  return () => fail(new TypeError('Failed to fetch'))
 }
 
 describe('DeleteEventButton', () => {
@@ -79,6 +91,70 @@ describe('DeleteEventButton', () => {
     for (const listKey of listKeys) expect(queryClient.getQueryData(listKey)).toMatchObject({ items: [pitchNight] })
   })
 
+  it('still says the event was deleted when the user left the page meanwhile, and leaves them there', async () => {
+    let respondToDelete: (response: Response) => void = () => {}
+    mockFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          respondToDelete = resolve
+        }),
+    )
+    const { router, user } = renderButton()
+
+    await confirmDelete(user)
+    // Browser Back, say, while the request runs.
+    await act(() => router.navigate('/'))
+    respondToDelete(new Response(null, { status: 204 }))
+
+    expect(await screen.findByText('“Workshop” was deleted.')).toBeInTheDocument()
+    expect(router.state.location).toMatchObject({ pathname: '/', search: '' })
+  })
+
+  it('says the delete failed when the user left the page meanwhile', async () => {
+    const failDelete = holdDelete()
+    const { router, user } = renderButton()
+
+    await confirmDelete(user)
+    await act(() => router.navigate('/'))
+    failDelete()
+
+    expect(await screen.findByText(`“Workshop” wasn't deleted. ${NETWORK_ERROR_MESSAGE}`)).toBeInTheDocument()
+    expect(router.state.location).toMatchObject({ pathname: '/', search: '' })
+  })
+
+  it('says the delete failed when the dialog was closed while it ran', async () => {
+    const failDelete = holdDelete()
+    const { router, user } = renderButton()
+
+    const dialog = await confirmDelete(user)
+    // As a second Escape does in the browser. The close event follows in a later task.
+    await act(async () => {
+      dialog.close()
+      await new Promise((resolve) => setTimeout(resolve))
+    })
+    failDelete()
+
+    expect(await screen.findByText(`“Workshop” wasn't deleted. ${NETWORK_ERROR_MESSAGE}`)).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/events/evt-1')
+  })
+
+  it('shows a delete that is still running when the dialog is opened again, and then how it ended', async () => {
+    const failDelete = holdDelete()
+    const { user } = renderButton()
+
+    const dialog = await confirmDelete(user)
+    await act(async () => {
+      dialog.close()
+      await new Promise((resolve) => setTimeout(resolve))
+    })
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(within(dialog).getByRole('button', { name: 'Deleting…' })).toBeInTheDocument()
+    failDelete()
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(NETWORK_ERROR_MESSAGE)
+    expect(screen.queryByText(/wasn't deleted/)).not.toBeInTheDocument()
+  })
+
   it('keeps the dialog open and shows the error when the delete fails', async () => {
     mockFetch(() => Promise.reject(new TypeError('Failed to fetch')))
     const { queryClient, router, user } = renderButton()
@@ -93,5 +169,7 @@ describe('DeleteEventButton', () => {
     for (const listKey of listKeys) {
       expect(queryClient.getQueryData(listKey)).toMatchObject({ items: [workshop, pitchNight] })
     }
+    // Only the dialog says so.
+    expect(screen.queryByText(/wasn't deleted/)).not.toBeInTheDocument()
   })
 })

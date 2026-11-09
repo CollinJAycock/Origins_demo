@@ -28,9 +28,12 @@ export function useRegister(eventId: string) {
   return useMutation({
     mutationFn: (input: RegistrationInput) => createRegistration(eventId, input),
     onSuccess: (registration) => {
-      // Registrations are ordered oldest first, so the new one goes at the end.
+      // Registrations are ordered oldest first, so the new one goes at the end, unless a refresh that finished
+      // first has already brought it in.
       queryClient.setQueryData<RegistrationDto[]>(eventKeys.registrations(eventId), (registrations) =>
-        registrations ? [...registrations, registration] : registrations,
+        !registrations || registrations.some((item) => item.id === registration.id)
+          ? registrations
+          : [...registrations, registration],
       )
       // Counts, availability and "full" are computed by the server: refetch just the event.
       void queryClient.invalidateQueries({ queryKey: eventKeys.detail(eventId), exact: true })

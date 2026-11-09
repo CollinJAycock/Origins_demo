@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import type { EventStatus } from '../../lib/eventStatus'
 import { eventKeys } from '../../queries/keys'
 import { makeEvent, makePage, makeRegistration } from '../../test/fixtures'
 import { jsonResponse, mockFetch, problemResponse, renderWithProviders } from '../../test/utils'
+import { Toaster } from '../ui/Toaster'
 import { RegistrationPanel } from './RegistrationPanel'
 
 const event = makeEvent({ id: 'evt-1', maxCapacity: 30, registeredCount: 18 })
@@ -148,6 +150,37 @@ describe('RegistrationPanel', () => {
     expect(screen.getByText(explanation)).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Name' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Register' })).not.toBeInTheDocument()
+  })
+
+  it('says the registration failed when the form had gone by then', async () => {
+    let respond: (response: Response) => void = () => {}
+    const fetchSpy = mockFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          respond = resolve
+        }),
+    )
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+    const panel = (status: EventStatus) => (
+      <QueryClientProvider client={queryClient}>
+        <RegistrationPanel event={event} status={status} />
+        <Toaster />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(panel(open))
+    const user = userEvent.setup()
+
+    await user.type(screen.getByRole('textbox', { name: 'Name' }), 'Grace Hopper')
+    await user.type(screen.getByRole('textbox', { name: 'Email' }), 'grace@example.com')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled())
+    // A refresh shows the event full while the registration runs, so the form gives way to the notice.
+    rerender(panel({ kind: 'full' }))
+    respond(problemResponse(409, { detail: 'This event is full (30 of 30 spots taken).', code: 'event_full' }))
+
+    expect(
+      await screen.findByText("Grace Hopper wasn't registered. This event is full (30 of 30 spots taken)."),
+    ).toBeInTheDocument()
   })
 
   it('moves focus to the heading when a spot opens up while the notice has focus', () => {

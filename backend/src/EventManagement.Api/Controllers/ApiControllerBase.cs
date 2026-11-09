@@ -1,5 +1,4 @@
 using System.Net.Mime;
-using System.Text.Json;
 using EventManagement.Api.Common;
 using EventManagement.Api.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
@@ -33,15 +32,15 @@ public abstract class ApiControllerBase : ControllerBase
     };
 
     // Goes through the same factory as automatic model validation, so every 400 has the same shape. The domain
-    // names fields after its properties ("MaxCapacity"); clients know them by their JSON names ("maxCapacity").
+    // names fields after its properties ("MaxCapacity"); like every validation problem's keys, they are turned into
+    // the JSON names clients know ("maxCapacity") by ProblemDetailsConventions.
     private ActionResult ValidationProblemFor(Error error)
     {
         foreach (var (field, messages) in error.FieldErrors)
         {
-            var key = JsonNamingPolicy.CamelCase.ConvertName(field);
             foreach (var message in messages)
             {
-                ModelState.AddModelError(key, message);
+                ModelState.AddModelError(field, message);
             }
         }
 

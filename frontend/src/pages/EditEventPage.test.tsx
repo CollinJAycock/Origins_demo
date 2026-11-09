@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider, type InitialEntry } from 'react-router'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { EventDto } from '../api/types'
 import { Toaster } from '../components/ui/Toaster'
 import type { BackState } from '../lib/navigation'
 import { eventKeys } from '../queries/keys'
@@ -33,6 +34,39 @@ function renderEditPage(entries: InitialEntry[] = ['/events/evt-1', '/events/evt
   return { router, queryClient, user: userEvent.setup() }
 }
 
+/** Saves from the edit page, opened from the list via the event, then goes back while the save runs. */
+async function saveThenLeave() {
+  let respond: (response: Response) => void = () => {}
+  const fetchSpy = mockFetch(({ method }) =>
+    method === 'PUT'
+      ? new Promise<Response>((resolve) => {
+          respond = resolve
+        })
+      : jsonResponse(workshop),
+  )
+  const { router, user } = renderEditPage(['/', '/events/evt-1', '/events/evt-1/edit'])
+
+  await user.click(await screen.findByRole('button', { name: 'Save changes' }))
+  await waitFor(() =>
+    expect(fetchSpy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'PUT' })),
+  )
+  // Browser Back while the request is in flight.
+  await act(() => router.navigate(-1))
+  expect(await screen.findByRole('heading', { name: 'Details' })).toBeInTheDocument()
+  return { router, respondToSave: (response: Response) => respond(response) }
+}
+
+/** Serves `event` and accepts saves; returns a function that gives the last body saved. */
+function mockSaving(event: EventDto) {
+  let saved: unknown
+  mockFetch(({ method, body }) => {
+    if (method !== 'PUT') return jsonResponse(event)
+    saved = body
+    return jsonResponse({ ...event, ...(body as object) })
+  })
+  return () => saved
+}
+
 describe('EditEventPage', () => {
   it('returns to the page it came from after saving, without adding a history entry', async () => {
     const fetchSpy = mockFetch(({ method, body }) =>
@@ -52,29 +86,67 @@ describe('EditEventPage', () => {
     expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true)
   })
 
-  it('stays where the user went if they leave while the changes are saving', async () => {
-    let respondToSave: (response: Response) => void = () => {}
-    const fetchSpy = mockFetch(({ method }) =>
-      method === 'PUT'
-        ? new Promise<Response>((resolve) => {
-            respondToSave = resolve
-          })
-        : jsonResponse(workshop),
-    )
-    const { router, user } = renderEditPage(['/', '/events/evt-1', '/events/evt-1/edit'])
+  describe('the start time', () => {
+    // Pinned, so the starts below stay ahead of the clock.
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date('2026-06-01T12:00:10Z'))
+    })
 
-    await user.click(await screen.findByRole('button', { name: 'Save changes' }))
-    await waitFor(() =>
-      expect(fetchSpy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'PUT' })),
-    )
-    // Browser Back while the request is in flight.
-    await act(() => router.navigate(-1))
-    expect(await screen.findByRole('heading', { name: 'Details' })).toBeInTheDocument()
+    it('is saved exactly as stored when the date is left alone', async () => {
+      // The date field shows local time to the minute, so it can't hold these seconds.
+      const saved = mockSaving(makeEvent({ id: 'evt-1', title: 'Workshop', date: '2026-07-01T18:00:30.500Z' }))
+      const { user } = renderEditPage()
+
+      await user.type(await screen.findByLabelText('Title', { exact: false }), ', part two')
+      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+      expect(await screen.findByRole('heading', { name: 'Details' })).toBeInTheDocument()
+      expect(saved()).toMatchObject({ title: 'Workshop, part two', date: '2026-07-01T18:00:30.500Z' })
+    })
+
+    it('can still be saved when the start is only seconds away', async () => {
+      // The field shows the start to the minute, which has already passed.
+      const saved = mockSaving(makeEvent({ id: 'evt-1', title: 'Workshop', date: '2026-06-01T12:00:30Z' }))
+      const { user } = renderEditPage()
+
+      await user.type(await screen.findByLabelText('Title', { exact: false }), ', part two')
+      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+      expect(await screen.findByRole('heading', { name: 'Details' })).toBeInTheDocument()
+      expect(saved()).toMatchObject({ title: 'Workshop, part two', date: '2026-06-01T12:00:30Z' })
+    })
+
+    it('is saved as entered when the date was changed', async () => {
+      const saved = mockSaving(makeEvent({ id: 'evt-1', title: 'Workshop', date: '2026-07-01T18:00:30.500Z' }))
+      const { user } = renderEditPage()
+
+      fireEvent.change(await screen.findByLabelText('Date and time'), { target: { value: '2026-08-03T10:15' } })
+      await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+      expect(await screen.findByRole('heading', { name: 'Details' })).toBeInTheDocument()
+      expect(saved()).toMatchObject({ date: new Date('2026-08-03T10:15').toISOString() })
+    })
+  })
+
+  it('stays where the user went if they leave while the changes are saving', async () => {
+    const { router, respondToSave } = await saveThenLeave()
 
     respondToSave(jsonResponse(workshop))
 
     expect(await screen.findByText('Changes saved.')).toBeInTheDocument()
     // Going back once more would have taken them past the event to the list.
+    expect(router.state.location.pathname).toBe('/events/evt-1')
+  })
+
+  it('says the changes were not saved when that fails after the user left', async () => {
+    const { router, respondToSave } = await saveThenLeave()
+
+    respondToSave(problemResponse(409, { detail: "Past events can't be edited.", code: 'event_in_past' }))
+
+    expect(
+      await screen.findByText("Changes to “Workshop” weren't saved. Past events can't be edited."),
+    ).toBeInTheDocument()
     expect(router.state.location.pathname).toBe('/events/evt-1')
   })
 
@@ -92,6 +164,8 @@ describe('EditEventPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent("Past events can't be edited.")
     expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true)
+    // The form says so, not a toast as well.
+    expect(screen.queryByText(/weren't saved/)).not.toBeInTheDocument()
   })
 
   it('links back to the list it was opened from when the event no longer exists', async () => {

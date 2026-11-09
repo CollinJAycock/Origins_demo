@@ -1,7 +1,9 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { flushSync } from 'react-dom'
 import type { ApiErrorCode } from '../api/client'
-import { toServerFormErrors } from './serverErrors'
+import { getErrorMessage, toServerFormErrors } from './serverErrors'
+import { toast } from './toast'
+import { useIsMounted } from './useIsMounted'
 import { hasErrors, type FieldErrors } from './validation'
 
 interface UseFormOptions<Field extends string> {
@@ -13,6 +15,11 @@ interface UseFormOptions<Field extends string> {
   codeFields?: Partial<Record<ApiErrorCode, Field>>
   /** Receives valid values. Reject (e.g. with the ApiError) to show the failure on the form. */
   onSubmit: (values: Record<Field, string>, helpers: { reset: () => void }) => Promise<void>
+  /**
+   * What a failed submit didn't do, e.g. "“Team offsite” wasn't created.". If the form has gone by the time the
+   * submit fails (the user left the page while it ran, say), this and the error appear in a toast instead.
+   */
+  failureSummary: (values: Record<Field, string>) => string
 }
 
 /**
@@ -30,7 +37,9 @@ export function useForm<Field extends string>({
   validate,
   codeFields,
   onSubmit,
+  failureSummary,
 }: UseFormOptions<Field>) {
+  const isMounted = useIsMounted()
   const [values, setValues] = useState(initialValues)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [serverErrors, setServerErrors] = useState<FieldErrors<Field>>({})
@@ -90,6 +99,11 @@ export function useForm<Field extends string>({
     try {
       await onSubmit(values, { reset })
     } catch (error) {
+      // The form has gone, so it can't show the error.
+      if (!isMounted()) {
+        toast.error(`${failureSummary(values)} ${getErrorMessage(error)}`)
+        return
+      }
       const server = toServerFormErrors(error, fields, codeFields)
       flushSync(() => {
         setServerErrors(server.fieldErrors)

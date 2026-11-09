@@ -24,6 +24,10 @@ public sealed class Event
     private EventDetails _details;
     private DateTimeOffset _updatedAt;
 
+    // Set when the event is removed from the store. A request that found the event just before can still hold it,
+    // so every change checks this under the lock and fails as if the event had not been found.
+    private bool _isDeleted;
+
     private Event(Guid id, EventDetails details, DateTimeOffset createdAt)
     {
         Id = id;
@@ -66,9 +70,22 @@ public sealed class Event
     }
 
     /// <summary>
+    /// Marks the event as deleted, so callers still holding it can no longer change it: updating, registering and
+    /// unregistering then fail with <see cref="ErrorCodes.EventNotFound"/>. The store calls this when it removes the
+    /// event.
+    /// </summary>
+    internal void MarkDeleted()
+    {
+        lock (_gate)
+        {
+            _isDeleted = true;
+        }
+    }
+
+    /// <summary>
     /// Replaces the event's details. Checked in this order: the details must be valid (including a future date),
-    /// the event must not have started (past events are locked), and the capacity can't drop below the current
-    /// number of registrations.
+    /// the event must not have been deleted, the event must not have started (past events are locked), and the
+    /// capacity can't drop below the current number of registrations.
     /// </summary>
     /// <returns>The event's state right after the update.</returns>
     public Result<EventSnapshot> Update(EventDetails details, DateTimeOffset now)
@@ -81,6 +98,11 @@ public sealed class Event
 
         lock (_gate)
         {
+            if (_isDeleted)
+            {
+                return EventErrors.EventNotFound(Id);
+            }
+
             if (HasStarted(_details.Date, now))
             {
                 return EventErrors.PastEventLocked;
@@ -99,7 +121,8 @@ public sealed class Event
 
     /// <summary>
     /// Registers an attendee. Checks run in order of usefulness to the caller: the name and email must be valid,
-    /// the event must not have started, the email must not already be registered, and a spot must be free.
+    /// the event must not have been deleted or have started, the email must not already be registered, and a spot
+    /// must be free.
     /// </summary>
     public Result<Registration> Register(string name, string email, DateTimeOffset now)
     {
@@ -114,6 +137,11 @@ public sealed class Event
 
         lock (_gate)
         {
+            if (_isDeleted)
+            {
+                return EventErrors.EventNotFound(Id);
+            }
+
             if (HasStarted(_details.Date, now))
             {
                 return EventErrors.RegistrationClosed;
@@ -141,6 +169,11 @@ public sealed class Event
     {
         lock (_gate)
         {
+            if (_isDeleted)
+            {
+                return EventErrors.EventNotFound(Id);
+            }
+
             if (!_registrations.TryGetValue(registrationId, out var registration))
             {
                 return EventErrors.RegistrationNotFound(registrationId);

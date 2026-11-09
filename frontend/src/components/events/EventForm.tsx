@@ -16,23 +16,43 @@ import { Input, Textarea } from '../ui/Input'
 
 interface EventFormProps {
   initialValues: EventFormValues
+  /**
+   * The event's stored start (edit only), checked and sent as is while the date field still shows it. The field
+   * holds local time to the minute, so converting it back could move the start: it drops seconds, and when the
+   * clocks go back it reads the repeated hour as its first occurrence.
+   */
+  originalDate?: string
   /** Registrations already taken (edit only): the capacity can't go below this. */
   registeredCount?: number
   submitLabel: string
   /** Should reject with the API error on failure so it can be shown on the form. */
   onSubmit: (input: EventInput) => Promise<void>
+  /** What a failed submit didn't do, e.g. "“Team offsite” wasn't created.", for a toast if the form has gone by then. */
+  failureSummary: (values: EventFormValues) => string
   onCancel: () => void
 }
 
 /** Create/edit form for an event. */
-export function EventForm({ initialValues, registeredCount = 0, submitLabel, onSubmit, onCancel }: EventFormProps) {
+export function EventForm({
+  initialValues,
+  originalDate,
+  registeredCount = 0,
+  submitLabel,
+  onSubmit,
+  failureSummary,
+  onCancel,
+}: EventFormProps) {
   const now = useNow()
+  // The stored start, while the date field still shows it.
+  const keptDateFor = (values: EventFormValues) =>
+    originalDate !== undefined && values.date === initialValues.date ? originalDate : undefined
   const form = useForm({
     initialValues,
     fields: EVENT_FIELDS,
-    validate: (values) => validateEventForm(values, { now, registeredCount }),
+    validate: (values) => validateEventForm(values, { now, registeredCount, keptDate: keptDateFor(values) }),
     codeFields: { capacity_below_registrations: 'maxCapacity' },
-    onSubmit: (values) => onSubmit(toEventInput(values)),
+    onSubmit: (values) => onSubmit(toEventInput(values, keptDateFor(values))),
+    failureSummary,
   })
   const minCapacity = Math.max(EVENT_LIMITS.capacityMin, registeredCount)
 

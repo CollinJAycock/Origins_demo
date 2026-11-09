@@ -45,6 +45,23 @@ describe('validateEventForm', () => {
     expect(validate({ date: '2020-01-01T10:00' }).date).toBe('Event date must be in the future.')
   })
 
+  it('checks a kept start itself, not the field showing it to the minute', () => {
+    // Seconds into a minute. The field shows the start to the minute, which has passed in every time zone, since
+    // their offsets are whole minutes.
+    const keptDate = '2026-06-01T12:00:30Z'
+    const values = { ...valid, date: toDateTimeLocalValue(keptDate) }
+    const dateError = (at: string, kept?: string) =>
+      validateEventForm(values, { now: new Date(at), keptDate: kept }).date
+
+    expect(dateError('2026-06-01T12:00:10Z')).toBe('Event date must be in the future.')
+    expect(dateError('2026-06-01T12:00:10Z', keptDate)).toBeUndefined()
+    expect(dateError(keptDate, keptDate)).toBe('Event date must be in the future.')
+  })
+
+  it('rejects a kept start that is not a date', () => {
+    expect(validateEventForm(valid, { now, keptDate: 'next friday' }).date).toBe('Enter a valid date and time.')
+  })
+
   it.each(['', '  '])('requires a capacity (%j)', (maxCapacity) => {
     expect(validate({ maxCapacity }).maxCapacity).toBe('Max capacity is required.')
   })
@@ -79,6 +96,12 @@ describe('toEventInput', () => {
       maxCapacity: 25,
     })
   })
+
+  it('sends a kept start as is, without reading the date field', () => {
+    // A start in the last hours of year 9999 UTC can be in year 10000 locally, which the field can't parse.
+    const input = toEventInput({ ...valid, date: '10000-01-01T05:29' }, '9999-12-31T23:59:00Z')
+    expect(input.date).toBe('9999-12-31T23:59:00Z')
+  })
 })
 
 describe('validateRegistrationForm', () => {
@@ -93,7 +116,12 @@ describe('validateRegistrationForm', () => {
     })
   })
 
-  it.each(['ada', 'ada@', '@example.com', 'ada@example', 'ada lovelace@example.com'])('rejects %j', (email) => {
+  // The API decides what else is valid; the form must not turn away an address it accepts.
+  it.each(['ops@localhost', 'ada@example'])('accepts %j, which has a single-label domain', (email) => {
+    expect(validateRegistrationForm({ name: 'Ada', email })).toEqual({})
+  })
+
+  it.each(['ada', 'ada@', '@example.com', 'ada@@example.com', 'ada lovelace@example.com'])('rejects %j', (email) => {
     expect(validateRegistrationForm({ name: 'Ada', email }).email).toBe('Enter a valid email address.')
   })
 

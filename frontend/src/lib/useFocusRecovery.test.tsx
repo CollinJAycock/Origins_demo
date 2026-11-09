@@ -10,10 +10,14 @@ interface HarnessProps {
   showHeading?: boolean
   /** Mounts an input that takes focus, as another component might in the same render. */
   showSearch?: boolean
+  /** Sends focus back to where it came from instead of to the heading. */
+  toOrigin?: boolean
 }
 
-function Harness({ showRetry = true, showHeading = true, showSearch = false }: HarnessProps) {
-  const focusRecovery = useFocusRecovery((container) => container.querySelector<HTMLElement>('h2'))
+function Harness({ showRetry = true, showHeading = true, showSearch = false, toOrigin = false }: HarnessProps) {
+  const focusRecovery = useFocusRecovery((container, cameFrom) =>
+    toOrigin ? cameFrom : container.querySelector<HTMLElement>('h2'),
+  )
   return (
     <>
       <div {...focusRecovery}>
@@ -68,6 +72,33 @@ describe('useFocusRecovery', () => {
     rerender(<Harness showRetry={false} showSearch />)
 
     expect(screen.getByRole('textbox', { name: 'Search' })).toHaveFocus()
+  })
+
+  it('tells the target finder where focus came from', () => {
+    const { rerender } = render(<Harness toOrigin />)
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    act(() => elsewhere.focus())
+    act(() => screen.getByRole('button', { name: 'Retry' }).focus())
+
+    rerender(<Harness toOrigin showRetry={false} />)
+
+    expect(elsewhere).toHaveFocus()
+  })
+
+  it('still knows where focus came from after the window was in the background', async () => {
+    const { rerender } = render(<Harness toOrigin />)
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' })
+    const retry = screen.getByRole('button', { name: 'Retry' })
+    act(() => elsewhere.focus())
+    act(() => retry.focus())
+
+    // Leaving the window blurs the element, and coming back focuses it again, from nowhere.
+    fireEvent.focusOut(retry)
+    await act(() => Promise.resolve())
+    fireEvent.focusIn(retry)
+    rerender(<Harness toOrigin showRetry={false} />)
+
+    expect(elsewhere).toHaveFocus()
   })
 
   it('forgets the element once focus has moved out of the container', () => {

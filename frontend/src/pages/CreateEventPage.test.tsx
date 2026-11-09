@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
+import { NETWORK_ERROR_MESSAGE } from '../api/client'
 import { Toaster } from '../components/ui/Toaster'
 import { toDateTimeLocalValue } from '../lib/dates'
 import { createQueryClient } from '../queries/queryClient'
@@ -75,25 +76,40 @@ describe('CreateEventPage', () => {
   })
 
   it('stays where the user went if they leave while the event is being created', async () => {
-    let respondToCreate: (response: Response) => void = () => {}
-    const fetchSpy = mockFetch(
-      () =>
-        new Promise<Response>((resolve) => {
-          respondToCreate = resolve
-        }),
-    )
-    const { router, user } = renderCreatePage()
+    const { router, request } = await createThenLeave()
 
-    await createTeamOffsite(user)
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
-    // Browser Back while the request is in flight.
-    await act(() => router.navigate(-1))
-    expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument()
-
-    respondToCreate(jsonResponse(created, 201))
+    request.resolve(jsonResponse(created, 201))
 
     expect(await screen.findByText('“Team offsite” was created.')).toBeInTheDocument()
     // Opening the new event now would pull them away from the list.
     expect(router.state.location.pathname).toBe('/')
   })
+
+  it('says the event was not created when that fails after the user left', async () => {
+    const { router, request } = await createThenLeave()
+
+    request.reject(new TypeError('Failed to fetch'))
+
+    expect(await screen.findByText(`“Team offsite” wasn't created. ${NETWORK_ERROR_MESSAGE}`)).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/')
+  })
 })
+
+/** Creates "Team offsite" from the create page, then goes back to the list while the request runs. */
+async function createThenLeave() {
+  const request = { resolve: (_response: Response) => {}, reject: (_error: Error) => {} }
+  const fetchSpy = mockFetch(
+    () =>
+      new Promise<Response>((resolve, reject) => {
+        Object.assign(request, { resolve, reject })
+      }),
+  )
+  const { router, user } = renderCreatePage()
+
+  await createTeamOffsite(user)
+  await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+  // Browser Back while the request is in flight.
+  await act(() => router.navigate(-1))
+  expect(await screen.findByRole('heading', { name: 'Events' })).toBeInTheDocument()
+  return { router, request }
+}

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import { NETWORK_ERROR_MESSAGE } from '../api/client'
@@ -172,6 +172,32 @@ describe('EventDetailsPage', () => {
     await waitFor(() => expect(screen.queryByText(/Couldn't refresh this event/)).not.toBeInTheDocument())
     // Retry went with the warning, so focus moves to the event's heading.
     await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Workshop' })).toHaveFocus())
+  })
+
+  it('lists a new attendee once when a refresh brought them in before the registration came back', async () => {
+    let attendees = [ada]
+    let respondToRegister: (response: Response) => void = () => {}
+    mockFetch(({ method, url }) => {
+      if (!url.pathname.endsWith('/registrations')) return jsonResponse(workshop)
+      if (method !== 'POST') return jsonResponse(attendees)
+      return new Promise<Response>((resolve) => {
+        respondToRegister = resolve
+      })
+    })
+    const { user, queryClient } = renderPage()
+
+    await user.type(await screen.findByRole('textbox', { name: 'Name' }), 'Grace Hopper')
+    await user.type(screen.getByRole('textbox', { name: 'Email' }), 'grace@example.com')
+    await user.click(screen.getByRole('button', { name: 'Register' }))
+    // The server has stored the registration, and a refresh shows it before the response arrives.
+    attendees = [ada, grace]
+    await act(() => queryClient.refetchQueries({ queryKey: eventKeys.registrations('evt-1') }))
+    respondToRegister(jsonResponse(grace, 201))
+
+    // The form clears once the registration is in.
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue(''))
+    const attendeeList = screen.getByRole('region', { name: /Attendees/ })
+    expect(within(attendeeList).getAllByText('Grace Hopper')).toHaveLength(1)
   })
 
   it('moves focus to the notice that replaces the form after registering for the last spot', async () => {

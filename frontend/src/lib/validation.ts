@@ -37,11 +37,16 @@ interface EventValidationContext {
   now: Date
   /** When editing, capacity may not drop below the registrations already taken. */
   registeredCount?: number
+  /**
+   * When editing, the event's stored start if it is sent in place of the date field's value. That start is then
+   * the one that must be in the future: the field shows it to the minute, which can already have passed.
+   */
+  keptDate?: string
 }
 
 export function validateEventForm(
   values: EventFormValues,
-  { now, registeredCount = 0 }: EventValidationContext,
+  { now, registeredCount = 0, keptDate }: EventValidationContext,
 ): FieldErrors<EventField> {
   const errors: FieldErrors<EventField> = {}
 
@@ -56,8 +61,8 @@ export function validateEventForm(
   if (!values.date) {
     errors.date = 'Date and time are required.'
   } else {
-    const date = parseDateTimeLocalValue(values.date)
-    if (!date) errors.date = 'Enter a valid date and time.'
+    const date = keptDate !== undefined ? new Date(keptDate) : parseDateTimeLocalValue(values.date)
+    if (!date || Number.isNaN(date.getTime())) errors.date = 'Enter a valid date and time.'
     else if (date.getTime() <= now.getTime()) errors.date = 'Event date must be in the future.'
   }
 
@@ -78,9 +83,9 @@ export function validateEventForm(
   return errors
 }
 
-/** Converts validated form values into the API request body. */
-export function toEventInput(values: EventFormValues): EventInput {
-  const date = dateTimeLocalToIso(values.date)
+/** Converts validated form values into the API request body, with `keptDate` (if any) in place of the date field. */
+export function toEventInput(values: EventFormValues, keptDate?: string): EventInput {
+  const date = keptDate ?? dateTimeLocalToIso(values.date)
   if (!date) throw new Error('toEventInput requires a validated date.')
   return {
     title: values.title.trim(),
@@ -102,8 +107,9 @@ export const REGISTRATION_FIELDS = ['name', 'email'] as const satisfies readonly
 
 export const EMPTY_REGISTRATION_FORM: RegistrationFormValues = { name: '', email: '' }
 
-// Deliberately simple: something@something.tld. The server performs the definitive check.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+// Deliberately loose: one @ with something on both sides, and no spaces. It must not turn away an address the
+// API accepts, such as one at a single-label domain (ops@localhost); the API makes the definitive check.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/
 
 export function validateRegistrationForm(values: RegistrationFormValues): FieldErrors<RegistrationField> {
   const errors: FieldErrors<RegistrationField> = {}

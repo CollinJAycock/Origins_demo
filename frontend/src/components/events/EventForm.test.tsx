@@ -27,6 +27,7 @@ function renderForm({
       registeredCount={registeredCount}
       submitLabel="Create event"
       onSubmit={onSubmit}
+      failureSummary={() => "The event wasn't created."}
       onCancel={vi.fn<() => void>()}
     />,
   )

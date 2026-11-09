@@ -64,6 +64,7 @@ export function EditEventPage() {
                 <EventForm
                   key={event.id}
                   initialValues={eventToFormValues(event)}
+                  originalDate={event.date}
                   registeredCount={event.registeredCount}
                   submitLabel="Save changes"
                   onSubmit={async (input) => {
@@ -73,6 +74,7 @@ export function EditEventPage() {
                     // would take them one step too far.
                     if (isMounted()) goBack()
                   }}
+                  failureSummary={() => `Changes to “${event.title}” weren't saved.`}
                   onCancel={goBack}
                 />
               </Card>

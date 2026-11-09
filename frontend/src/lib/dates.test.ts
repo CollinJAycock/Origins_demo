@@ -80,6 +80,18 @@ describe('formatRelativeTime', () => {
     ['2026-08-01T12:00:00Z', 'in 2 months'],
     ['2028-06-01T12:00:00Z', 'in 2 years'],
     ['2026-06-01T12:00:20Z', 'now'],
+    // On either side of where each unit takes over. Rounded counts that reach the next unit up are given in it.
+    ['2026-06-01T12:00:59Z', 'now'],
+    ['2026-06-01T12:01:00Z', 'in 1 minute'],
+    ['2026-06-01T12:59:24Z', 'in 59 minutes'],
+    ['2026-06-01T12:59:36Z', 'in 1 hour'],
+    ['2026-06-01T11:00:24Z', '1 hour ago'],
+    ['2026-06-02T11:24:00Z', 'in 23 hours'],
+    ['2026-06-30T12:00:00Z', 'in 29 days'],
+    ['2026-07-01T12:00:00Z', 'in 1 month'],
+    ['2027-05-11T12:00:00Z', 'in 11 months'],
+    ['2027-05-12T12:00:00Z', 'in 1 year'],
+    ['2027-05-31T12:00:00Z', 'in 1 year'],
   ])('describes %s as "%s"', (iso, expected) => {
     expect(formatRelativeTime(iso, now, { locale: 'en-US' })).toBe(expected)
   })
@@ -92,5 +104,10 @@ describe('formatRelativeTime', () => {
     ['2 days ago', new Date(2026, 10, 12, 8), new Date(2026, 10, 10, 20)],
   ])('counts calendar days rather than 24-hour periods ("%s")', (expected, from, date) => {
     expect(formatRelativeTime(date.toISOString(), from, { locale: 'en-US' })).toBe(expected)
+  })
+
+  it('describes just under a day ahead as "tomorrow", not "in 24 hours"', () => {
+    const date = new Date(2026, 10, 10, 11, 42)
+    expect(formatRelativeTime(date.toISOString(), new Date(2026, 10, 9, 12), { locale: 'en-US' })).toBe('tomorrow')
   })
 })

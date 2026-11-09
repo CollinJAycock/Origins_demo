@@ -24,6 +24,7 @@ export function RegistrationForm({ eventId }: { eventId: string }) {
       toast.success(`${registration.name} is registered.`)
       reset()
     },
+    failureSummary: (values) => `${values.name.trim()} wasn't registered.`,
   })
 
   return (

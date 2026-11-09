@@ -29,5 +29,15 @@ public sealed class InMemoryEventRepository : IEventRepository
     }
 
     /// <inheritdoc />
-    public bool Remove(Guid id) => _events.TryRemove(id, out _);
+    public bool Remove(Guid id)
+    {
+        if (!_events.TryRemove(id, out var removed))
+        {
+            return false;
+        }
+
+        // A request that found the event just before can still hold it; it must not change a deleted event.
+        removed.MarkDeleted();
+        return true;
+    }
 }

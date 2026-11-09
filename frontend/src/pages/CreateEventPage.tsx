@@ -30,6 +30,7 @@ export function CreateEventPage() {
             // in the history, so "back" from the new event doesn't reopen it.
             if (isMounted()) void navigate(`/events/${event.id}`, { replace: true })
           }}
+          failureSummary={(values) => `“${values.title.trim()}” wasn't created.`}
           onCancel={goBack}
         />
       </Card>

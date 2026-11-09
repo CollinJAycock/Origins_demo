@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Outlet, ScrollRestoration, useLocation } from 'react-router'
+import { focusPageHeading } from '../../lib/focusPageHeading'
 import { Toaster } from '../ui/Toaster'
 import { AppHeader } from './AppHeader'
 
@@ -14,9 +15,8 @@ export function AppLayout() {
   useEffect(() => {
     if (pathname === previousPathnameRef.current) return
     previousPathnameRef.current = pathname
-    const target = mainRef.current?.querySelector('h1') ?? mainRef.current
     // Without scrolling: ScrollRestoration has already put the page where it belongs.
-    target?.focus({ preventScroll: true })
+    focusPageHeading(mainRef.current)
   }, [pathname])
 
   return (

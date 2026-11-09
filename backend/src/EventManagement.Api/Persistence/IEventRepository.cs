@@ -18,7 +18,10 @@ public interface IEventRepository
     /// <summary>Adds a new event.</summary>
     void Add(Event newEvent);
 
-    /// <summary>Removes an event, and with it the registrations it owns.</summary>
+    /// <summary>
+    /// Removes an event, and with it the registrations it owns. A caller that still holds the event can no longer
+    /// change it.
+    /// </summary>
     /// <returns><see langword="true"/> if the event existed.</returns>
     bool Remove(Guid id);
 }
